@@ -1,0 +1,25 @@
+{
+  "name": "@query-farm/grainlift-hello-world",
+  "version": "0.1.0",
+  "description": "Synthetic ADBC worker using the Grainlift TypeScript toolkit",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "check": "tsc --noEmit && biome check ."
+  },
+  "dependencies": {
+    "@query-farm/grainlift": "file:../grainlift-typescript"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.19.15",
+    "@biomejs/biome": "2.4.16"
+  }
+}

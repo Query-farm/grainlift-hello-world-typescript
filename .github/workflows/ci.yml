@@ -1,0 +1,52 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  example:
+    strategy:
+      matrix:
+        node: [22, 24]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: grainlift-hello-world-typescript
+      - uses: actions/checkout@v4
+        with:
+          repository: Query-farm/grainlift-typescript
+          path: grainlift-typescript
+      - uses: actions/checkout@v4
+        with:
+          repository: Query-farm/grainlift
+          path: grainlift
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci && npm run build
+        working-directory: grainlift-typescript
+      - run: npm ci && npm run check && npm test
+        working-directory: grainlift-hello-world-typescript
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: 1.97.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: cargo build --locked --release -p adbc-driver-grainlift
+        working-directory: grainlift
+      - run: cargo install vgi-iroh-bridge --version 0.27.3 --locked
+      - run: python -m pip install pytest==9.1.1 pyarrow==25.0.1 adbc-driver-manager==1.12.0 cryptography==50.0.1
+      - name: Shared native ADBC and wire conformance across all transports
+        run: |
+          TLS_DIR="${RUNNER_TEMP}/grainlift-typescript-tls"
+          bash validation/diagnostics/make_test_tls.sh "$TLS_DIR"
+          for transport in http https tcp mtls iroh; do
+            python -m pytest validation/conformance -q \
+              --worker-command '["node","../grainlift-hello-world-typescript/dist/main.js"]' \
+              --native-driver target/release/libadbc_driver_grainlift.so \
+              --worker-transport "$transport" --worker-tls-dir "$TLS_DIR" \
+              --iroh-bridge "$(command -v vgi-iroh-bridge)" \
+              --junitxml="typescript-${transport}.xml"
+          done
+        working-directory: grainlift
