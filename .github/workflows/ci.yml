@@ -20,6 +20,11 @@ jobs:
         with:
           repository: Query-farm/grainlift
           path: grainlift
+      - uses: actions/checkout@v4
+        with:
+          repository: Query-farm/vgi-rpc-rust
+          ref: e60c342c2ae86730abe7a863f79cbd11f2f89910 # v0.27.3
+          path: vgi-rpc-rust
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
@@ -35,7 +40,9 @@ jobs:
           python-version: '3.13'
       - run: cargo build --locked --release -p adbc-driver-grainlift
         working-directory: grainlift
-      - run: cargo install vgi-iroh-bridge --version 0.27.3 --locked
+      - name: Build the pinned Iroh bridge source release
+        run: cargo build --locked --release -p vgi-iroh-bridge
+        working-directory: vgi-rpc-rust
       - run: python -m pip install pytest==9.1.1 pyarrow==25.0.1 adbc-driver-manager==1.12.0 cryptography==50.0.1
       - name: Shared native ADBC and wire conformance across all transports
         run: |
@@ -46,7 +53,7 @@ jobs:
               --worker-command '["node","../grainlift-hello-world-typescript/dist/main.js"]' \
               --native-driver target/release/libadbc_driver_grainlift.so \
               --worker-transport "$transport" --worker-tls-dir "$TLS_DIR" \
-              --iroh-bridge "$(command -v vgi-iroh-bridge)" \
+              --iroh-bridge ../vgi-rpc-rust/target/release/vgi-iroh-bridge \
               --junitxml="typescript-${transport}.xml"
           done
         working-directory: grainlift

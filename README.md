@@ -115,7 +115,16 @@ Iroh requires the released `vgi-iroh-bridge` 0.27.3, an explicit
 `GRAINLIFT_IROH_BRIDGE` executable path, and
 `GRAINLIFT_HELLO_IROH_CLIENT_ID`/`GRAINLIFT_HELLO_IROH_OTHER_CLIENT_ID` EndpointId
 allowlists (at least one is required). EndpointIds are 64 lowercase hexadecimal
-characters. It runs the VGI bridge over a private Unix socket with
+characters. The bridge is a source release, not a crates.io package. From the
+directory containing the sibling repositories, with Rust 1.97 or newer:
+
+```sh
+git clone --branch v0.27.3 --depth 1 https://github.com/Query-farm/vgi-rpc-rust.git
+cargo build --manifest-path vgi-rpc-rust/Cargo.toml --locked --release -p vgi-iroh-bridge
+export GRAINLIFT_IROH_BRIDGE="$PWD/vgi-rpc-rust/target/release/vgi-iroh-bridge"
+```
+
+It runs the VGI bridge over a private Unix socket with
 ephemeral identity and no relay. Readiness includes `endpoint_id` and
 `direct_address` for native client configuration. This example setting is for
 testing; deployed services should configure a persistent Iroh secret key through
