@@ -1,7 +1,7 @@
 {
   "name": "@query-farm/grainlift-hello-world",
   "version": "0.1.0",
-  "description": "Synthetic ADBC worker using the Grainlift TypeScript toolkit",
+  "description": "A minimal ADBC service written in TypeScript with the Grainlift SDK",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
@@ -10,16 +10,22 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/main.js",
-    "test": "npm run build && node --test dist/tests/*.test.js",
+    "start": "npm run build --silent && node dist/src/main.js",
+    "client": "npm run build --silent && node dist/examples/client.js",
+    "test": "npm run build && node --test dist/src/tests/*.test.js",
     "check": "tsc --noEmit && biome check ."
   },
   "dependencies": {
-    "@query-farm/grainlift": "file:../grainlift-typescript"
+    "@query-farm/grainlift": "git+https://github.com/Query-farm/grainlift-typescript.git#02911c5a0e229d07a7578153c9cc7dd829407a2f"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
+    "@apache-arrow/adbc-driver-manager": "0.24.0",
+    "@biomejs/biome": "2.4.16",
     "@types/node": "22.19.15",
-    "@biomejs/biome": "2.4.16"
+    "apache-arrow": "21.2.0",
+    "typescript": "5.9.3"
+  },
+  "bin": {
+    "grainlift-hello-world": "dist/src/main.js"
   }
 }

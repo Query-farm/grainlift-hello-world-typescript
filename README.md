@@ -1,185 +1,171 @@
-# Grainlift hello world (TypeScript)
+# grainlift-hello-world (TypeScript)
 
-A small Node.js ADBC worker consuming the separate `@query-farm/grainlift`
-toolkit. Connect using the ordinary
-[Grainlift ADBC driver](https://github.com/Query-farm/grainlift) over HTTP, HTTPS,
-TCP, mTLS, or Iroh. Node.js 22 or newer is required.
-
-## Status
-
-This is a prerelease example and benchmark fixture, not a production database.
-The [TypeScript toolkit](https://github.com/Query-farm/grainlift-typescript) is
-not published to npm; this repository intentionally uses a sibling file
-dependency. The example package is private and is not intended for npm publication.
-
-The synthetic workload matches the Rust/Python/Go comparison fixture:
-4096 rows, 512 rows per Arrow batch, 64 binary payload bytes per row. `QUERY`
-returns nullable `number:int64` and `payload:binary`; `FAIL` produces a recoverable
-ADBC `INVALID_DATA` with SQLSTATE 22000. Payload bytes contain ASCII `x`.
-
-This example supports SQL/query execution and schema inference, with autocommit
-enabled. The framework exposes the complete protocol, but this deliberately
-small backend returns `NOT_IMPLEMENTED` for transactions, metadata, preparation,
-binding, ingestion, partitions and Substrait.
+A complete ADBC service in about 200 lines of TypeScript, built with the
+[Grainlift TypeScript SDK](https://github.com/Query-farm/grainlift-typescript)
+(`@query-farm/grainlift`). Any ADBC application connects to it through the
+native Grainlift driver; the service itself needs no database, SQL engine or
+downstream driver.
 
 ## Quickstart
 
-Clone and build the toolkit beside this repository:
+Requires Node.js 22+ and Rust 1.97+ (to build the native Grainlift ADBC driver
+once). The SDK is not on npm yet; `npm ci` installs it from a pinned GitHub
+commit and builds it.
 
-```sh
-git clone https://github.com/Query-farm/grainlift-typescript.git
-git clone https://github.com/Query-farm/grainlift-hello-world-typescript.git
-cd grainlift-typescript
-npm ci
-npm run build
-cd ../grainlift-hello-world-typescript
-npm ci
-npm run build
-export GRAINLIFT_HELLO_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
-node dist/main.js --transport http --port 0 --report report.json
-```
+    git clone https://github.com/Query-farm/grainlift.git ../grainlift
+    (cd ../grainlift && cargo build --locked -p adbc-driver-grainlift)
+    npm ci
 
-Read the JSON readiness line for `endpoint` and `sample_pid`. Connect with the
-ordinary native Grainlift ADBC driver, target `default`, bearer token from the
-environment, and `autocommit=True`, then execute `QUERY`. Keep stdin open while
-using the server. A newline/EOF on stdin or SIGINT/SIGTERM shuts down and writes
-zero retained-handle counts to `report.json`. An optional
-`GRAINLIFT_HELLO_OTHER_TOKEN` authenticates a second principal for ownership tests.
+Start the service (`node dist/src/main.js` works too once built):
 
-### Connect with an ordinary ADBC client
+    npm start
 
-For this HTTP quickstart, use a second terminal with Python and install the
-standard client dependencies:
+No credentials are needed. The service is read-only, so it accepts anonymous
+clients (see [Authentication](#authentication)).
 
-```sh
-python -m pip install adbc-driver-manager pyarrow
-```
+### Query it from SQL
 
-Install or build the [native Grainlift driver](https://github.com/Query-farm/grainlift)
-for your platform. Set `GRAINLIFT_DRIVER` to its absolute shared-library path
-(`.so`, `.dylib`, or `.dll`), `GRAINLIFT_ENDPOINT` to the printed endpoint, and
-`GRAINLIFT_HELLO_TOKEN` to the same generated token used by the server. Then run:
+[Haybarn](https://github.com/Query-farm-haybarn/haybarn), Query.Farm's DuckDB
+distribution, loads the Grainlift driver through the `adbc_scanner` extension.
+In a second terminal, run [`examples/query.sql`](examples/query.sql) (this uses
+[uv](https://docs.astral.sh/uv/)):
 
-```python
-import os
+    export GRAINLIFT_DRIVER=$PWD/../grainlift/target/debug/libadbc_driver_grainlift.dylib  # .so on Linux
+    uvx haybarn-cli < examples/query.sql
 
-from adbc_driver_manager import dbapi
+The same script runs unchanged in the DuckDB CLI. It prints:
 
-with dbapi.connect(
-    driver=os.environ["GRAINLIFT_DRIVER"],
-    entrypoint="AdbcDriverGrainliftInit",
-    autocommit=True,
-    db_kwargs={
-        "grainlift.uri": os.environ["GRAINLIFT_ENDPOINT"],
-        "grainlift.target": "default",
-        "grainlift.auth.bearer_token": os.environ["GRAINLIFT_HELLO_TOKEN"],
-    },
-) as connection:
-    with connection.cursor() as cursor:
-        cursor.execute("QUERY")
-        result = cursor.fetch_arrow_table()
-        print(result.schema)
-        print(f"Received {result.num_rows} rows")
-```
+    ┌───────────────┐
+    │    message    │
+    │    varchar    │
+    ├───────────────┤
+    │ Hello, world! │
+    └───────────────┘
+    ┌─────────┬────────────┐
+    │ numbers │   total    │
+    │  int64  │   int128   │
+    ├─────────┼────────────┤
+    │  100000 │ 4999950000 │
+    └─────────┴────────────┘
+    ...
 
-The default workload returns 4096 rows. Python is only the client in this example;
-the server and backend run in Node.js.
+`adbc_scan` sends its quoted SQL to this service. The rows come back as an
+ordinary relation that you can join, aggregate or export locally.
 
-## Usage and configuration
+### Query it from TypeScript
 
-| Argument | Default | Purpose |
+[`examples/client.ts`](examples/client.ts) uses the standard ADBC driver manager
+for Node.js ([`@apache-arrow/adbc-driver-manager`](https://www.npmjs.com/package/@apache-arrow/adbc-driver-manager)):
+
+    npm run client
+
+It prints:
+
+    { message: [ 'Hello, world!' ] }
+    numbers(2500): [1024, 1024, 452] rows per Arrow batch
+    running_total(2500): last row {"number":2499,"total":3123750}
+    Empty result: 0 rows, schema: number: Int64
+
+## What's in the package
+
+| Module | Contents |
+| --- | --- |
+| [`src/worker.ts`](src/worker.ts) | The service: `HelloWorker` → `HelloConnection` → `HelloStatement`, plus the two result styles below |
+| [`src/main.ts`](src/main.ts) | The `grainlift-hello-world` command (`npm start`) |
+
+The service answers three queries:
+
+| Query | Result | Demonstrates |
 | --- | --- | --- |
-| `--transport` | `http` | `http`, `https`, `tcp`, `mtls`, or `iroh` |
-| `--port` | `0` | Let the OS choose a free listener port; Iroh uses its own endpoint |
-| `--rows` | `4096` | Rows returned by `QUERY` |
-| `--batch-rows` | `512` | Maximum rows per generated Arrow batch |
-| `--payload-bytes` | `64` | Binary payload bytes per row |
-| `--report` | Unset | Write retained-handle counts after shutdown |
-| `--tls-dir` | Unset | Certificate directory for HTTPS or mTLS |
+| `SELECT 'Hello, world!' AS message` | one row | the smallest possible result |
+| `SELECT * FROM numbers(n)` | 0..n-1 | a **generator** of Arrow batches |
+| `SELECT * FROM running_total(n)` | 0..n-1 with a running sum | a serializable **`ResultProducer`** |
 
-The example requires `GRAINLIFT_HELLO_TOKEN` of at least 16 bytes in every mode.
-It authenticates HTTP/HTTPS calls only; the other transports use the identities
-described below. Tokens and TLS private keys belong outside source control.
+`n` ranges from 0 to 100000. Anything else is an ADBC `INVALID_ARGUMENT` error
+with SQLSTATE 42000. The example matches these queries exactly rather than
+pretending to parse SQL.
 
-### Transports
+`HelloStatement` implements the ADBC statement lifecycle: set the SQL, then
+`prepare`, `executeSchema` and `execute`. Preparation matters because clients
+such as `adbc_scanner` prepare every query before running it.
 
-HTTP, HTTPS, and TCP bind loopback. HTTPS takes `--tls-dir PATH` containing
-`server.pem` and `server-key.pem`. mTLS additionally needs `ca.pem`, `client.pem`,
-and `other.pem`. Clients need the corresponding private client key and trusted
-CA; they must verify the server hostname. mTLS verifies the
-certificate chain and authorizes only the exact client/other certificates from
-that directory, mapping them to separate principals. Plain TCP explicitly trusts
-local clients as `load-principal`; bearer tokens do not authenticate raw TCP.
+### Generators vs. producers
 
-Iroh requires the released `vgi-iroh-bridge` 0.27.3, an explicit
-`GRAINLIFT_IROH_BRIDGE` executable path, and
-`GRAINLIFT_HELLO_IROH_CLIENT_ID`/`GRAINLIFT_HELLO_IROH_OTHER_CLIENT_ID` EndpointId
-allowlists (at least one is required). EndpointIds are 64 lowercase hexadecimal
-characters. The bridge is a source release, not a crates.io package. From the
-directory containing the sibling repositories, with Rust 1.97 or newer:
+Both styles stream lazily in batches of at most 1024 rows, and you can mix them
+freely within one service.
 
-```sh
-git clone --branch v0.27.3 --depth 1 https://github.com/Query-farm/vgi-rpc-rust.git
-cargo build --manifest-path vgi-rpc-rust/Cargo.toml --locked --release -p vgi-iroh-bridge
-export GRAINLIFT_IROH_BRIDGE="$PWD/vgi-rpc-rust/target/release/vgi-iroh-bridge"
-```
+- **Generator** (`numbers`): return `{ schema, batches: generator }`. Any
+  iterable or async iterable of batches works. It's the simplest option, and it
+  can hold resources such as an open database cursor (release them in the
+  result's `close` callback). The iterator lives in server memory until the
+  client finishes or releases the result.
+- **Producer** (`running_total`): subclass `ResultProducer` with fields that are
+  the entire resumable state, implement `produce()`, register the class once
+  with `ResultProducer.register(name, RunningTotal)`, and return
+  `QueryResult.fromProducer(schema, state)`. Over HTTP the state is serialized
+  into the encrypted continuation token after each batch. The server keeps no
+  iterator or replay batch between fetches, and a retried fetch recomputes its
+  batch from the token. This is the same approach VGI-RPC streams use.
 
-It runs the VGI bridge over a private Unix socket with
-ephemeral identity and no relay. Readiness includes `endpoint_id` and
-`direct_address` for native client configuration. This example setting is for
-testing; deployed services should configure a persistent Iroh secret key through
-the toolkit. The Unix-socket adapter supports Linux/macOS, not Windows, and
-trusts processes running under the same OS account.
+Pick a producer when the state is small and serializable (JSON values and
+`bigint`), such as offsets, keyset cursors or counters. Pick a generator when it
+isn't.
 
-### Limits and lifecycle
+## Authentication
 
-All transports reuse connections. State is process-local and requires session
-affinity. The example uses the toolkit's bounded session, request, batch, binding,
-and admission defaults. Raw transports cap cumulative input at 128 MiB per
-connection lifetime; exhausting this budget closes the socket and can produce
-an ADBC `IO` error. Recreate the ADBC connection; there is no transparent retry.
-See [toolkit hosting and limits](https://github.com/Query-farm/grainlift-typescript#hosting-and-limits)
-for configuration and shutdown semantics. CLI workload controls do not override
-the toolkit's memory and message limits.
+Anonymous access is opt-in in the Grainlift SDK. This example enables it because
+it only serves public, read-only data: its command calls
+`run(new HelloWorker(), { target: "hello", auth: "anonymous" })` from
+`@query-farm/grainlift/cli`. Requests without credentials act as the shared
+`anonymous` principal.
 
-## Testing
+- Set `GRAINLIFT_TOKEN` (at least 16 bytes) on both sides to connect as an
+  authenticated principal instead. A client that sends a wrong token is
+  rejected, never downgraded to anonymous.
+- Run `npm start -- --auth token` to require a token. The server prints a
+  generated token when `GRAINLIFT_TOKEN` is unset.
 
-After building the sibling toolkit:
+For a service that can write data or expose private data, keep the default
+token authentication. In your own hosting code, anonymous access is
+`serveHttp(service, authenticateAnonymous("anonymous", tokens))`, where the
+optional `tokens` maps bearer secrets to identities as in
+`bearerAuthenticateStatic`.
 
-```sh
-npm run check
-npm test
-```
+## Hosting options
 
-The shared compatibility suite runs from a separate Grainlift checkout and needs
-a built native driver plus that repository's Python validation dependencies:
+`npm start -- --help` lists them. Any worker gets the same command-line host by
+calling `run()` from `@query-farm/grainlift/cli` in its own entry point.
 
-```sh
-python -m pytest validation/conformance \
-  --worker-command '["node","/absolute/path/grainlift-hello-world-typescript/dist/main.js"]' \
-  --native-driver /absolute/path/libadbc_driver_grainlift.so
-```
+- `--host http` (default): loopback HTTP for development. SIGINT/SIGTERM drain
+  requests and close handles.
+- `--host mtls`: verified TCP/mTLS; client certificates identify callers.
+- `--port`: listening port (default 8080). Point the client at a different
+  port with `GRAINLIFT_ENDPOINT`.
 
-Pass `--worker-transport tcp|mtls|https|iroh` to test another adapter,
-`--worker-tls-dir PATH` for TLS fixtures, and `--iroh-bridge PATH` for Iroh.
-The shared suite provisions independent client EndpointIds and credentials.
+For mTLS, supply the server chain, key, client CA and authorized client URI SAN:
 
-Run benchmarks and profiling on EC2 or another designated test host, not a
-developer workstation. Do not use synthetic throughput as evidence for real
-backend performance. The [CI workflow](.github/workflows/ci.yml) checks Node 22/24,
-builds the sibling SDK and native driver, and exercises all five transports.
-See [GitHub Actions](https://github.com/Query-farm/grainlift-hello-world-typescript/actions)
-for hosted run results and the toolkit's
-[recorded validation](https://github.com/Query-farm/grainlift-typescript/blob/main/VALIDATION.md)
-for the completed EC2 run.
+    npm start -- --host mtls --port 8443 \
+      --tls-cert server.pem --tls-key server-key.pem \
+      --client-ca clients-ca.pem --client-uri spiffe://example.org/client
 
-## Documentation
+    export GRAINLIFT_ENDPOINT=tls+tcp://127.0.0.1:8443
+    export GRAINLIFT_TLS_CA=server-ca.pem GRAINLIFT_TLS_CERT=client.pem GRAINLIFT_TLS_KEY=client-key.pem
+    export GRAINLIFT_TLS_SERVER_NAME=localhost   # the DNS name in the server certificate
+    npm run client
 
-- [Toolkit API, authentication, limits, and deployment assumptions](https://github.com/Query-farm/grainlift-typescript)
-- [Behavior coverage and remaining release work](https://github.com/Query-farm/grainlift-typescript/blob/main/docs/COVERAGE.md)
-- [Synthetic backend implementation](src/backend.ts) and [executable host](src/main.ts)
-- [Grainlift native driver and shared compatibility suite](https://github.com/Query-farm/grainlift)
+These hosts are for development and bind to loopback. For production
+deployment, limits and the security contract, see the SDK's
+[README](https://github.com/Query-farm/grainlift-typescript#readme).
 
-## License
+## Development
 
-Licensed under [Apache License 2.0](LICENSE).
+    npm run check    # tsc and Biome (lint and format)
+    GRAINLIFT_DRIVER=../grainlift/target/debug/libadbc_driver_grainlift.dylib npm test
+
+Native integration tests skip when `GRAINLIFT_DRIVER` is unset. They include
+running `examples/query.sql` in the Haybarn CLI through `uvx` (or the executable
+named by `HAYBARN`), which downloads the `adbc_scanner` extension on first use.
+The native tests run the service in a separate process, because the Node.js
+driver manager blocks the event loop during some driver calls. CI builds a
+pinned native-driver revision and runs everything on Linux and macOS with
+Node.js 22 and 24.
