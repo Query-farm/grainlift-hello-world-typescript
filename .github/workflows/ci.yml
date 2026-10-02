@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Query-farm/grainlift
-          ref: e609935dff72a09d5ab63eddc5a4a7e88b6f61d4
+          ref: 6d2e8cca9cc149cbc6352b87e5c1a0318cd7136c
           path: native-driver
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -38,7 +38,7 @@ jobs:
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: 0.11.7
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: 1.97.1
       # Installs the SDK from its pinned GitHub commit; its prepare script builds dist/.
@@ -62,6 +62,28 @@ jobs:
             --test-reporter=spec --test-reporter-destination=stdout \
             --test-reporter=junit --test-reporter-destination=test-results.xml \
             dist/src/tests/*.test.js
+      - name: Shared Grainlift worker conformance (HTTP, HTTPS, TCP, mTLS)
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS)
+              driver="$PWD/native-driver/target/debug/libadbc_driver_grainlift.dylib"
+              export PATH="$(brew --prefix openssl@3)/bin:$PATH" ;;
+            Linux) driver="$PWD/native-driver/target/debug/libadbc_driver_grainlift.so" ;;
+            *) exit 1 ;;
+          esac
+          tls="$RUNNER_TEMP/grainlift-conformance-tls"
+          bash native-driver/validation/diagnostics/make_test_tls.sh "$tls"
+          worker="[\"$(command -v node)\",\"$PWD/dist/src/conformance.js\"]"
+          cd native-driver
+          for transport in http https tcp mtls; do
+            uv run --no-project --python 3.13 \
+              --with pytest==9.1.1 --with pyarrow==25.0.1 \
+              --with adbc-driver-manager==1.12.0 --with cryptography==50.0.1 \
+              python -m pytest validation/conformance -q \
+              --native-driver "$driver" --worker-command "$worker" \
+              --worker-transport "$transport" --worker-tls-dir "$tls"
+          done
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

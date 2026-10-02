@@ -21,7 +21,7 @@ async function collect(result: QueryResult): Promise<RecordBatch[]> {
   return batches;
 }
 const column = (batches: RecordBatch[], name: string) =>
-  batches.flatMap((value) => Array.from(value.getChild(name)!.toArray() as BigInt64Array, Number));
+  batches.flatMap((value) => [...value.getChild(name)!].map(Number));
 const status = (expected: string) => (error: unknown) =>
   error instanceof AdbcError && error.status === expected;
 
@@ -65,8 +65,14 @@ test("preparation, parameter and result schemas work before execution, as adbc_s
     const prepared = await statement(query);
     await prepared.prepare();
     assert.equal((await prepared.getParameterSchema()).fields.length, 0);
-    assert.deepEqual((await prepared.executeSchema()).names, columns);
-    assert.deepEqual((await prepared.execute()).schema.names, columns);
+    assert.deepEqual(
+      (await prepared.executeSchema()).fields.map((f) => f.name),
+      columns,
+    );
+    assert.deepEqual(
+      (await prepared.execute()).schema.fields.map((f) => f.name),
+      columns,
+    );
   }
 });
 
@@ -78,7 +84,7 @@ test("executing before setting a query is an ADBC INVALID_STATE error", async ()
 test("the hello query returns one row", async () => {
   const batches = await collect(await execute("SELECT 'Hello, world!' AS message"));
   assert.deepEqual(
-    batches.flatMap((value) => value.getChild("message")!.toArray()),
+    batches.flatMap((value) => [...value.getChild("message")!]),
     ["Hello, world!"],
   );
 });

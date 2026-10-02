@@ -20,15 +20,16 @@ import {
   AdbcError,
   batch,
   Connection,
-  Field,
-  Int64,
+  field,
+  int64,
   type OpenOptions,
   QueryResult,
   type RecordBatch,
   ResultProducer,
-  Schema,
+  type Schema,
   Statement,
-  Utf8,
+  schema,
+  utf8,
   type Worker,
 } from "@query-farm/grainlift";
 
@@ -36,11 +37,11 @@ export const TARGET = "hello";
 export const MAX_ROWS = 100_000;
 export const BATCH_ROWS = 1024;
 
-export const HELLO_SCHEMA = new Schema([new Field("message", new Utf8(), true)]);
-export const NUMBERS_SCHEMA = new Schema([new Field("number", new Int64(), true)]);
-export const RUNNING_TOTAL_SCHEMA = new Schema([
-  new Field("number", new Int64(), true),
-  new Field("total", new Int64(), true),
+export const HELLO_SCHEMA: Schema = schema([field("message", utf8(), true)]);
+export const NUMBERS_SCHEMA: Schema = schema([field("number", int64(), true)]);
+export const RUNNING_TOTAL_SCHEMA: Schema = schema([
+  field("number", int64(), true),
+  field("total", int64(), true),
 ]);
 
 const TABLE_FUNCTION = /^select \* from (numbers|running_total)\(([0-9]{1,6})\)$/;
@@ -147,7 +148,7 @@ export class HelloStatement extends Statement {
   /** Report that the supported queries take no parameters. */
   override async getParameterSchema(): Promise<Schema> {
     this.query();
-    return new Schema([]);
+    return schema([]);
   }
 
   /** Return the result schema without producing rows. */

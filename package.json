@@ -1,6 +1,6 @@
 {
   "name": "@query-farm/grainlift-hello-world",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A minimal ADBC service written in TypeScript with the Grainlift SDK",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "check": "tsc --noEmit && biome check ."
   },
   "dependencies": {
-    "@query-farm/grainlift": "git+https://github.com/Query-farm/grainlift-typescript.git#02911c5a0e229d07a7578153c9cc7dd829407a2f"
+    "@query-farm/grainlift": "git+https://github.com/Query-farm/grainlift-typescript.git#871796926edae0301260ed8b850c779bc27b27d0"
   },
   "devDependencies": {
     "@apache-arrow/adbc-driver-manager": "0.24.0",

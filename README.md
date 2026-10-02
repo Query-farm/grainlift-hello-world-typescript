@@ -72,6 +72,7 @@ It prints:
 | --- | --- |
 | [`src/worker.ts`](src/worker.ts) | The service: `HelloWorker` → `HelloConnection` → `HelloStatement`, plus the two result styles below |
 | [`src/main.ts`](src/main.ts) | The `grainlift-hello-world` command (`npm start`) |
+| [`src/conformance.ts`](src/conformance.ts) | The TypeScript worker for Grainlift's [shared conformance suite](https://github.com/Query-farm/grainlift/tree/main/validation/conformance) (not part of the example) |
 
 The service answers three queries:
 
@@ -169,3 +170,19 @@ The native tests run the service in a separate process, because the Node.js
 driver manager blocks the event loop during some driver calls. CI builds a
 pinned native-driver revision and runs everything on Linux and macOS with
 Node.js 22 and 24.
+
+### Shared conformance
+
+`dist/src/conformance.js` implements the worker process contract of Grainlift's
+[shared conformance suite](https://github.com/Query-farm/grainlift/tree/main/validation/conformance):
+the `QUERY`/`FAIL` workload, `STORE`/`STORED`, `--max-request-bytes`, and object
+storage through the SDK's `ExternalStorageConfig` (`--storage-endpoint`,
+`--storage-bucket`, `--storage-region`, `--storage-prefix`,
+`--storage-threshold-bytes`, credentials from `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`). From a grainlift checkout, after `npm run build`:
+
+    python -m pytest validation/conformance -q \
+      --native-driver /absolute/path/libadbc_driver_grainlift.dylib \
+      --worker-command '["/absolute/path/node","/absolute/path/dist/src/conformance.js"]'
+
+CI runs it over HTTP, HTTPS, TCP and mTLS.
